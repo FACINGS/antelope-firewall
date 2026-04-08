@@ -25,6 +25,13 @@
 # random will send to servers randomly, with more requests going to servers with more weight
 routing_mode = "round_robin"
 
+# max_request_body_size: Integer (bytes)
+# Maximum allowed request body size. Requests with a Content-Length exceeding
+# this value will receive a 413 Payload Too Large response.
+# Default: 65536 (64 KB). Raise for chains where contract deployments are
+# expected (set_contract transactions can be several MB).
+# max_request_body_size = 4194304
+
 # address: String
 # Socket the firewall will listen on
 # Leave as 0.0.0.0:3000 to bind on port 3000 on all addresses assigned to this machine, including localhost

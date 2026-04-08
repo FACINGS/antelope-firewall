@@ -62,7 +62,8 @@ pub struct AntelopeFirewall {
     ratelimiters: Vec<RateLimiter>,
     matching_engine: MatchingEngine,
     routing_mode: RoutingModeState,
-    socket_addr: SocketAddr
+    socket_addr: SocketAddr,
+    max_request_body_size: u64,
 }
 
 #[derive(Error, Debug, Clone)]
@@ -80,13 +81,14 @@ pub enum AntelopeFirewallError {
 use AntelopeFirewallError::*;
 
 impl AntelopeFirewall {
-    pub fn new(routing_mode: RoutingModeState, socket_addr: SocketAddr) -> Self {
+    pub fn new(routing_mode: RoutingModeState, socket_addr: SocketAddr, max_request_body_size: u64) -> Self {
         AntelopeFirewall {
             filters: Vec::new(),
             ratelimiters: Vec::new(),
             matching_engine: MatchingEngine::new(),
             routing_mode,
-            socket_addr
+            socket_addr,
+            max_request_body_size,
         }
     }
     pub fn add_filter(mut self, filter: Filter) -> Self {
@@ -151,8 +153,7 @@ impl AntelopeFirewall {
 
         // Check size hint, return 413 error if too big
         let max = body.size_hint().upper().unwrap_or(u64::MAX);
-        // TODO: make this configurable
-        if max > 1024 * 64 {
+        if max > self.max_request_body_size {
             let mut resp = Response::new(full("Body too big"));
             *resp.status_mut() = hyper::StatusCode::PAYLOAD_TOO_LARGE;
             info!("Request from {} too large", ip);

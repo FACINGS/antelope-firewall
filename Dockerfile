@@ -7,7 +7,8 @@ COPY . .
 
 RUN cargo build --release
 
-CMD ./target/release/antelope-firewall -c "${CONFIG_PATH}"
+ENTRYPOINT ["./target/release/antelope-firewall"]
+CMD ["-c", "/etc/antelope-firewall/config.toml"]
 
 EXPOSE 3000
 EXPOSE 3001

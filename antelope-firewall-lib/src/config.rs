@@ -10,11 +10,18 @@ use tokio::sync::RwLock;
 
 use crate::{firewall_builder::{RoutingModeState, AntelopeFirewall}, filter::Filter, ratelimiter::{RateLimiter, IncrementMode}, healthcheck::HealthChecker, prometheus::start_prometheus_exporter};
 
+fn default_max_request_body_size() -> u64 {
+    1024 * 64 // 64 KB — backwards compatible with prior hardcoded limit
+}
+
 #[derive(Deserialize, Debug)]
 pub struct Config {
     pub routing_mode: RoutingMode,
     pub address: String,
     pub prometheus_address: Option<String>,
+
+    #[serde(default = "default_max_request_body_size")]
+    pub max_request_body_size: u64,
 
     pub healthcheck: Option<HealthcheckConfig>,
 
@@ -152,7 +159,8 @@ pub async fn from_config(config: Config) -> Result<AntelopeFirewall, String> {
     let socket_addr: SocketAddr = config.address.parse().unwrap();
     let mut firewall = AntelopeFirewall::new(
         config.routing_mode.to_state(),
-        socket_addr
+        socket_addr,
+        config.max_request_body_size,
     );
 
     if let Some(filter_config) = config.filter {

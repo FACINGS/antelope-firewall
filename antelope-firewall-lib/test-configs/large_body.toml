@@ -1,0 +1,19 @@
+# Test config with a raised max_request_body_size (1 MB).
+# Used to verify that the configurable body limit works.
+
+routing_mode = "round_robin"
+address = "127.0.0.1:3002"
+max_request_body_size = 1048576
+
+[filter]
+block_contracts = []
+block_ips = []
+
+[[push_nodes]]
+name = "push"
+url = "http://eos.greymass.com"
+weight = 1
+
+[[get_nodes]]
+name = "get"
+url = "https://eos.greymass.com"

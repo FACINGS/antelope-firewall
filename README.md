@@ -43,6 +43,20 @@ This firewall runs a Prometheus exporter on a port configurable in the config. I
 
 # Configuring
 The file `default_config.toml` contains default settings which will work for most users. It does not filter out anything, and sets a ratelimiter that will only allow a given IP to submit transactions until it sends 5 failing requests in a minute.
+
+## Request body size limit
+
+By default the firewall rejects requests with a body larger than 64 KB (65536 bytes) with a `413 Payload Too Large` response. This is sufficient for most RPC traffic but too small for `set_contract` deployments. To raise the limit, add `max_request_body_size` to the top level of your config:
+
+```toml
+# Allow up to 4 MB request bodies (e.g. for contract deployments)
+max_request_body_size = 4194304
+```
+
+If omitted, the default of 65536 (64 KB) applies.
+
+## Node configuration
+
 The most important thing to change is the list of nodes that the firewall will delegate requests to. For example purposes the following is used:
 
 ```

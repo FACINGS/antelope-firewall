@@ -32,6 +32,16 @@ routing_mode = "round_robin"
 # expected (set_contract transactions can be several MB).
 # max_request_body_size = 4194304
 
+# client_ip_header: Option<String>
+# Header carrying the real client IP when the firewall runs behind a trusted
+# reverse proxy. When set, per-IP rate limiting and block_ips key on the header
+# value (the first entry of a comma-separated list, like X-Forwarded-For)
+# instead of the socket peer, which behind a proxy is the proxy's address and
+# would collapse all clients into one bucket. Only enable when the proxy is the
+# sole ingress path; otherwise the header is client-spoofable. Omit to key on
+# the socket peer.
+# client_ip_header = "cf-connecting-ip"
+
 # address: String
 # Socket the firewall will listen on
 # Leave as 0.0.0.0:3000 to bind on port 3000 on all addresses assigned to this machine, including localhost

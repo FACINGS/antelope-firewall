@@ -64,6 +64,7 @@ pub struct AntelopeFirewall {
     routing_mode: RoutingModeState,
     socket_addr: SocketAddr,
     max_request_body_size: u64,
+    client_ip_header: Option<String>,
 }
 
 #[derive(Error, Debug, Clone)]
@@ -80,8 +81,23 @@ pub enum AntelopeFirewallError {
 
 use AntelopeFirewallError::*;
 
+// Pick the client IP from a configured forwarded header, taking the first entry
+// of a comma-separated list (X-Forwarded-For style) and falling back to the
+// socket peer when the header is unset, absent, or unparseable.
+fn client_ip_from_headers(header_name: Option<&str>, headers: &hyper::HeaderMap, peer: IpAddr) -> IpAddr {
+    let Some(name) = header_name else {
+        return peer;
+    };
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .and_then(|first| first.trim().parse::<IpAddr>().ok())
+        .unwrap_or(peer)
+}
+
 impl AntelopeFirewall {
-    pub fn new(routing_mode: RoutingModeState, socket_addr: SocketAddr, max_request_body_size: u64) -> Self {
+    pub fn new(routing_mode: RoutingModeState, socket_addr: SocketAddr, max_request_body_size: u64, client_ip_header: Option<String>) -> Self {
         AntelopeFirewall {
             filters: Vec::new(),
             ratelimiters: Vec::new(),
@@ -89,7 +105,15 @@ impl AntelopeFirewall {
             routing_mode,
             socket_addr,
             max_request_body_size,
+            client_ip_header,
         }
+    }
+
+    // Resolve the client IP used for rate limiting and block lists. When a
+    // trusted-proxy header is configured, prefer its value and fall back to the
+    // socket peer when the header is absent or unparseable.
+    fn resolve_client_ip(&self, headers: &hyper::HeaderMap, peer: IpAddr) -> IpAddr {
+        client_ip_from_headers(self.client_ip_header.as_deref(), headers, peer)
     }
     pub fn add_filter(mut self, filter: Filter) -> Self {
         self.filters.push(filter);
@@ -149,6 +173,7 @@ impl AntelopeFirewall {
 
         // Parse thr request, try to put body into JSON
         let (parts, body) = req.into_parts();
+        let ip = self.resolve_client_ip(&parts.headers, ip);
         info!("Received Request from {} for url {}", ip, parts.uri);
 
         // Check size hint, return 413 error if too big
@@ -422,5 +447,65 @@ impl AntelopeFirewall {
                 Ok(get_error_response(full("Error forwarding request.")))
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod client_ip_tests {
+    use super::client_ip_from_headers;
+    use hyper::HeaderMap;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    fn peer() -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(10, 1, 0, 224))
+    }
+
+    #[test]
+    fn falls_back_to_peer_when_header_not_configured() {
+        let headers = HeaderMap::new();
+        assert_eq!(client_ip_from_headers(None, &headers, peer()), peer());
+    }
+
+    #[test]
+    fn uses_configured_header_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert("cf-connecting-ip", "66.249.66.1".parse().unwrap());
+        assert_eq!(
+            client_ip_from_headers(Some("cf-connecting-ip"), &headers, peer()),
+            "66.249.66.1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn takes_first_entry_of_forwarded_list() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.7, 162.158.1.1, 10.0.0.134".parse().unwrap());
+        assert_eq!(
+            client_ip_from_headers(Some("x-forwarded-for"), &headers, peer()),
+            "203.0.113.7".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn falls_back_to_peer_when_header_absent() {
+        let headers = HeaderMap::new();
+        assert_eq!(client_ip_from_headers(Some("cf-connecting-ip"), &headers, peer()), peer());
+    }
+
+    #[test]
+    fn falls_back_to_peer_on_unparseable_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert("cf-connecting-ip", "not-an-ip".parse().unwrap());
+        assert_eq!(client_ip_from_headers(Some("cf-connecting-ip"), &headers, peer()), peer());
+    }
+
+    #[test]
+    fn parses_ipv6() {
+        let mut headers = HeaderMap::new();
+        headers.insert("cf-connecting-ip", "2606:4700::1".parse().unwrap());
+        assert_eq!(
+            client_ip_from_headers(Some("cf-connecting-ip"), &headers, peer()),
+            "2606:4700::1".parse::<IpAddr>().unwrap()
+        );
     }
 }

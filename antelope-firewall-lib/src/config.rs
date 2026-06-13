@@ -23,6 +23,13 @@ pub struct Config {
     #[serde(default = "default_max_request_body_size")]
     pub max_request_body_size: u64,
 
+    // Header carrying the real client IP when the firewall runs behind a trusted
+    // reverse proxy (e.g. "cf-connecting-ip"). When set, per-IP rate limiting and
+    // block lists key on the header value instead of the socket peer (which would
+    // be the proxy). Only safe when the proxy is the sole ingress path, since the
+    // header is otherwise client-spoofable. Unset preserves socket-peer keying.
+    pub client_ip_header: Option<String>,
+
     pub healthcheck: Option<HealthcheckConfig>,
 
     pub filter: Option<FilterConfig>,
@@ -161,6 +168,7 @@ pub async fn from_config(config: Config) -> Result<AntelopeFirewall, String> {
         config.routing_mode.to_state(),
         socket_addr,
         config.max_request_body_size,
+        config.client_ip_header,
     );
 
     if let Some(filter_config) = config.filter {

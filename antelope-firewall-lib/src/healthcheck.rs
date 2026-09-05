@@ -2,11 +2,11 @@ use chrono::{DateTime, Duration, NaiveDateTime, TimeZone, Utc};
 use reqwest::Url;
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc
+    sync::Arc,
 };
 use tokio::sync::RwLock;
 
-use log::{info, error as err};
+use log::{error as err, info};
 
 #[derive(Debug)]
 pub struct HealthChecker {
@@ -17,6 +17,7 @@ pub struct HealthChecker {
 }
 
 use crate::api_responses::GetInfoReponse;
+use crate::NodeEntry;
 
 impl HealthChecker {
     pub async fn start(nodes: Vec<Url>, duration: Duration, grace_period: Duration) -> Arc<Self> {
@@ -49,12 +50,16 @@ impl HealthChecker {
                             get_info_response.insert(node_url.clone(), true);
                             drop(get_info_response);
                             info!("Healthcheck on node at {} succeeded", get_info_url);
-                        },
+                        }
                         Err(e) => {
                             get_info_response.insert(node_url.clone(), false);
                             drop(get_info_response);
-                            err!("Healthcheck on node at {} failed with error: {}", get_info_url, e);
-                        },
+                            err!(
+                                "Healthcheck on node at {} failed with error: {}",
+                                get_info_url,
+                                e
+                            );
+                        }
                     }
                 }
                 tokio::time::sleep(checker_clone.duration.to_std().unwrap()).await;
@@ -63,9 +68,17 @@ impl HealthChecker {
         checker
     }
 
-    pub async fn filter_healthy_urls(self: &Self, urls: HashSet<(Url, u64)>) -> HashSet<(Url, u64)> {
+    // Report the health of one node. Reads the same map the filter reads.
+    pub async fn is_healthy(&self, url: &Url) -> bool {
+        *self.healthy_map.read().await.get(url).unwrap_or(&false)
+    }
+
+    pub async fn filter_healthy_urls(self: &Self, nodes: HashSet<NodeEntry>) -> HashSet<NodeEntry> {
         let healthy_map = self.healthy_map.read().await;
-        urls.into_iter().filter(|(url, _)| *healthy_map.get(url).unwrap_or(&false)).collect()
+        nodes
+            .into_iter()
+            .filter(|node| *healthy_map.get(&node.url).unwrap_or(&false))
+            .collect()
     }
 }
 
@@ -75,17 +88,22 @@ async fn categorize_response_healthy(
 ) -> Result<(), String> {
     match node_response.and_then(|r| r.error_for_status()) {
         Ok(res) => {
-            let body = res.json::<GetInfoReponse>().await
+            let body = res
+                .json::<GetInfoReponse>()
+                .await
                 .map_err(|e| e.to_string())?;
             let healthy_after = Utc::now() - healthy_after;
             let parsed_datetime = Utc.from_utc_datetime(
                 &NaiveDateTime::parse_from_str(&body.head_block_time, "%Y-%m-%dT%H:%M:%S.%f")
-                    .map_err(|e| format!("error while parsing datetime: {}", e.to_string()))?
+                    .map_err(|e| format!("error while parsing datetime: {}", e.to_string()))?,
             );
-            if parsed_datetime >= healthy_after  {
+            if parsed_datetime >= healthy_after {
                 Ok(())
             } else {
-                Err(format!("Parsed head_block_time of {}, which was older than healthy time of {}", parsed_datetime, healthy_after))
+                Err(format!(
+                    "Parsed head_block_time of {}, which was older than healthy time of {}",
+                    parsed_datetime, healthy_after
+                ))
             }
         }
         Err(e) => Err(e.to_string()),
@@ -98,12 +116,22 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(start_paused=true)]
+    fn entry(url: Url, weight: u64) -> NodeEntry {
+        NodeEntry {
+            url,
+            weight,
+            name: "node".into(),
+            pinnable: true,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn parses_response() {
         let current_time = chrono::Utc::now();
-        
+
         let mut server = mockito::Server::new_async().await;
-        server.mock("POST", "/v1/chain/get_info")
+        server
+            .mock("POST", "/v1/chain/get_info")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(format!(
@@ -111,27 +139,34 @@ mod tests {
                 current_time.format("%Y-%m-%dT%H:%M:%S.%f")
             ))
             .create();
-        let url = Url::parse(format!("http://{}/", server.host_with_port()).as_str()).expect("Invalid url");
-        
+        let url = Url::parse(format!("http://{}/", server.host_with_port()).as_str())
+            .expect("Invalid url");
+
         let healthchecker = HealthChecker::start(
             Vec::from([url.clone()]),
             Duration::seconds(5),
             Duration::seconds(1),
-        ).await;
+        )
+        .await;
 
         for _ in 0..1000 {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
-        let result = healthchecker.filter_healthy_urls(HashSet::from([(url, 4)])).await;
+        let result = healthchecker
+            .filter_healthy_urls(HashSet::from([entry(url, 4)]))
+            .await;
         assert_eq!(result.len(), 1);
     }
 
     #[tokio::test]
     async fn removes_before_grace_period() {
-        let old_time = chrono::Utc::now().checked_sub_signed(Duration::seconds(3)).expect("Invalid time");
-        
+        let old_time = chrono::Utc::now()
+            .checked_sub_signed(Duration::seconds(3))
+            .expect("Invalid time");
+
         let mut server = mockito::Server::new_async().await;
-        server.mock("POST", "/v1/chain/get_info")
+        server
+            .mock("POST", "/v1/chain/get_info")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(format!(
@@ -139,17 +174,21 @@ mod tests {
                 old_time.format("%Y-%m-%dT%H:%M:%S.%f")
             ))
             .create();
-        
-        let url = Url::parse(format!("http://{}/", server.host_with_port()).as_str()).expect("Invalid url");
+
+        let url = Url::parse(format!("http://{}/", server.host_with_port()).as_str())
+            .expect("Invalid url");
 
         let healthchecker = HealthChecker::start(
             Vec::from([url.clone()]),
             Duration::seconds(5),
             Duration::seconds(1),
-        ).await;
+        )
+        .await;
 
         for _ in 0..1000 {
-            let result = healthchecker.filter_healthy_urls(HashSet::from([(url.clone(), 4)])).await;
+            let result = healthchecker
+                .filter_healthy_urls(HashSet::from([entry(url.clone(), 4)]))
+                .await;
             if result.len() == 0 {
                 return;
             } else if result.len() == 1 {
@@ -164,22 +203,27 @@ mod tests {
     #[tokio::test]
     async fn removes_invalid_json() {
         let mut server = mockito::Server::new_async().await;
-        server.mock("POST", "/v1/chain/get_info")
+        server
+            .mock("POST", "/v1/chain/get_info")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("abc")
             .create();
-        
-        let url = Url::parse(format!("http://{}/", server.host_with_port()).as_str()).expect("Invalid url");
+
+        let url = Url::parse(format!("http://{}/", server.host_with_port()).as_str())
+            .expect("Invalid url");
 
         let healthchecker = HealthChecker::start(
             Vec::from([url.clone()]),
             Duration::seconds(5),
             Duration::seconds(1),
-        ).await;
+        )
+        .await;
 
         for _ in 0..1000 {
-            let result = healthchecker.filter_healthy_urls(HashSet::from([(url.clone(), 4)])).await;
+            let result = healthchecker
+                .filter_healthy_urls(HashSet::from([entry(url.clone(), 4)]))
+                .await;
             if result.len() == 0 {
                 return;
             } else if result.len() == 1 {
@@ -193,9 +237,12 @@ mod tests {
 
     #[tokio::test]
     async fn removes_bad_format() {
-        let old_time = chrono::Utc::now().checked_sub_signed(Duration::milliseconds(500)).expect("Invalid time");
+        let old_time = chrono::Utc::now()
+            .checked_sub_signed(Duration::milliseconds(500))
+            .expect("Invalid time");
         let mut server = mockito::Server::new_async().await;
-        server.mock("POST", "/v1/chain/get_info")
+        server
+            .mock("POST", "/v1/chain/get_info")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(format!(
@@ -203,17 +250,21 @@ mod tests {
                 old_time.format("%Y-%m-%dBADFORMAT%H:%M:%S.%f")
             ))
             .create();
-        
-        let url = Url::parse(format!("http://{}/", server.host_with_port()).as_str()).expect("Invalid url");
+
+        let url = Url::parse(format!("http://{}/", server.host_with_port()).as_str())
+            .expect("Invalid url");
 
         let healthchecker = HealthChecker::start(
             Vec::from([url.clone()]),
             Duration::seconds(5),
             Duration::seconds(1),
-        ).await;
+        )
+        .await;
 
         for _ in 0..1000 {
-            let result = healthchecker.filter_healthy_urls(HashSet::from([(url.clone(), 4)])).await;
+            let result = healthchecker
+                .filter_healthy_urls(HashSet::from([entry(url.clone(), 4)]))
+                .await;
             if result.len() == 0 {
                 return;
             } else if result.len() == 1 {
@@ -227,11 +278,16 @@ mod tests {
 
     #[tokio::test]
     async fn only_removes_invalid() {
-        let old_time_one = chrono::Utc::now().checked_sub_signed(Duration::milliseconds(0)).expect("Invalid time");
-        let old_time_two = chrono::Utc::now().checked_sub_signed(Duration::milliseconds(5000)).expect("Invalid time");
+        let old_time_one = chrono::Utc::now()
+            .checked_sub_signed(Duration::milliseconds(0))
+            .expect("Invalid time");
+        let old_time_two = chrono::Utc::now()
+            .checked_sub_signed(Duration::milliseconds(5000))
+            .expect("Invalid time");
 
         let mut server_one = mockito::Server::new_async().await;
-        server_one.mock("POST", "/v1/chain/get_info")
+        server_one
+            .mock("POST", "/v1/chain/get_info")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(format!(
@@ -240,7 +296,8 @@ mod tests {
             ))
             .create();
         let mut server_two = mockito::Server::new_async().await;
-        server_two.mock("POST", "/v1/chain/get_info")
+        server_two
+            .mock("POST", "/v1/chain/get_info")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(format!(
@@ -248,18 +305,26 @@ mod tests {
                 old_time_two.format("%Y-%m-%dT%H:%M:%S.%f")
             ))
             .create();
-        
-        let url_one = Url::parse(format!("http://{}/", server_one.host_with_port()).as_str()).expect("Invalid url");
-        let url_two = Url::parse(format!("http://{}/", server_two.host_with_port()).as_str()).expect("Invalid url");
+
+        let url_one = Url::parse(format!("http://{}/", server_one.host_with_port()).as_str())
+            .expect("Invalid url");
+        let url_two = Url::parse(format!("http://{}/", server_two.host_with_port()).as_str())
+            .expect("Invalid url");
 
         let healthchecker = HealthChecker::start(
             Vec::from([url_one.clone(), url_two.clone()]),
             Duration::seconds(5),
             Duration::seconds(1),
-        ).await;
+        )
+        .await;
 
         for _ in 0..1000 {
-            let result = healthchecker.filter_healthy_urls(HashSet::from([(url_one.clone(), 4), (url_two.clone(), 1)])).await;
+            let result = healthchecker
+                .filter_healthy_urls(HashSet::from([
+                    entry(url_one.clone(), 4),
+                    entry(url_two.clone(), 1),
+                ]))
+                .await;
             if result.len() == 1 {
                 return;
             } else if result.len() == 2 {

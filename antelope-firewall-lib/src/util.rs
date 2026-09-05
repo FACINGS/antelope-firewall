@@ -64,6 +64,9 @@ mod tests {
 
     #[tokio::test]
     async fn error_response_valid() {
-        assert_eq!(get_error_response(full("Internal Server Error")).status(), 500);
+        assert_eq!(
+            get_error_response(full("Internal Server Error")).status(),
+            500
+        );
     }
 }

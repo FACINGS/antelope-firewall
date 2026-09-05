@@ -38,7 +38,8 @@ impl JsonDataCache {
             // TODO: Log errors
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
-                .build().expect("Error building reqwest client");
+                .build()
+                .expect("Error building reqwest client");
             loop {
                 let response = client.get(url.clone()).send().await;
                 match response {
@@ -78,23 +79,13 @@ impl JsonDataCache {
                 let data = cache.data.read().await;
                 let (ref json, ref status) = *data;
                 match status {
-                    JsonDataCacheStatus::Ok => {
-                        Some(Arc::clone(json))
-                    },
-                    JsonDataCacheStatus::UnableToFetch(e) => {
-                        None
-                    },
-                    JsonDataCacheStatus::InvalidResponse(e) => {
-                        None
-                    },
-                    JsonDataCacheStatus::Uninitialized => {
-                        None
-                    }
+                    JsonDataCacheStatus::Ok => Some(Arc::clone(json)),
+                    JsonDataCacheStatus::UnableToFetch(e) => None,
+                    JsonDataCacheStatus::InvalidResponse(e) => None,
+                    JsonDataCacheStatus::Uninitialized => None,
                 }
             }
-            None => {
-                Some(Arc::new(Value::Null))
-            },
+            None => Some(Arc::new(Value::Null)),
         }
     }
 }
@@ -105,10 +96,11 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test(start_paused=true)]
+    #[tokio::test(start_paused = true)]
     async fn caches_value() {
         let mut server = mockito::Server::new_async().await;
-        server.mock("GET", "/")
+        server
+            .mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("{\"hello\":\"world\"}")
@@ -117,7 +109,7 @@ mod tests {
 
         let data_cache = Some(Arc::new(JsonDataCache::new(
             format!("http://{}/", url).parse().unwrap(),
-            tokio::time::interval(Duration::from_secs(10))
+            tokio::time::interval(Duration::from_secs(10)),
         )));
         println!("{:?}", data_cache);
 
@@ -125,34 +117,35 @@ mod tests {
         for _ in 0..1000 {
             println!("{:?}", data_cache);
             let current_value = JsonDataCache::handle_cache_option(&data_cache).await;
-            
+
             match current_value {
                 Some(json_value) => {
                     match json_value.as_ref() {
                         serde_json::Value::Object(m) => {
                             let y = m.get("hello");
                             assert_eq!(y.expect("Key doesnt exist"), "world")
-                        },
+                        }
                         serde_json::Value::Null => {
                             panic!("null")
-                        },
+                        }
                         _ => {
                             panic!("Not an object")
-                        },
+                        }
                     }
-                    return
-                },
+                    return;
+                }
                 _ => {
                     tokio::time::sleep(Duration::from_secs(1)).await;
-                },
+                }
             }
         }
     }
 
-    #[tokio::test(start_paused=true)]
+    #[tokio::test(start_paused = true)]
     async fn handles_uninitialized() {
         let mut server = mockito::Server::new_async().await;
-        server.mock("GET", "/")
+        server
+            .mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("{\"hello\":\"world\"}")
@@ -161,25 +154,23 @@ mod tests {
 
         let data_cache = Some(Arc::new(JsonDataCache::new(
             format!("http://{}/", url).parse().unwrap(),
-            tokio::time::interval(Duration::from_secs(10))
+            tokio::time::interval(Duration::from_secs(10)),
         )));
 
         let current_value = JsonDataCache::handle_cache_option(&data_cache).await;
-        
+
         assert_eq!(current_value.is_none(), true);
     }
 
-    #[tokio::test(start_paused=true)]
+    #[tokio::test(start_paused = true)]
     async fn handles_server_error() {
         let mut server = mockito::Server::new_async().await;
-        server.mock("GET", "/")
-            .with_status(500)
-            .create();
+        server.mock("GET", "/").with_status(500).create();
         let url = server.host_with_port();
 
         let data_cache = Some(Arc::new(JsonDataCache::new(
             format!("http://{}/", url).parse().unwrap(),
-            tokio::time::interval(Duration::from_secs(10))
+            tokio::time::interval(Duration::from_secs(10)),
         )));
 
         // Clear the task queue to simulate waiting for the value to be grabbed
@@ -188,14 +179,15 @@ mod tests {
         }
 
         let current_value = JsonDataCache::handle_cache_option(&data_cache).await;
-        
+
         assert_eq!(current_value.is_none(), true);
     }
 
-    #[tokio::test(start_paused=true)]
+    #[tokio::test(start_paused = true)]
     async fn handles_invalid_json() {
         let mut server = mockito::Server::new_async().await;
-        server.mock("GET", "/")
+        server
+            .mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("BAD JSON")
@@ -204,7 +196,7 @@ mod tests {
 
         let data_cache = Some(Arc::new(JsonDataCache::new(
             format!("http://{}/", url).parse().unwrap(),
-            tokio::time::interval(Duration::from_secs(10))
+            tokio::time::interval(Duration::from_secs(10)),
         )));
 
         // Clear the task queue to simulate waiting for the value to be grabbed
@@ -213,7 +205,7 @@ mod tests {
         }
 
         let current_value = JsonDataCache::handle_cache_option(&data_cache).await;
-        
+
         assert_eq!(current_value.is_none(), true);
     }
 
@@ -221,23 +213,24 @@ mod tests {
     async fn handles_bad_fetch() {
         let data_cache = Some(Arc::new(JsonDataCache::new(
             "http://example.bad.domain/".parse().unwrap(),
-            tokio::time::interval(Duration::from_secs(10))
+            tokio::time::interval(Duration::from_secs(10)),
         )));
 
         // Wait to clear request timeout for bad domain
         tokio::time::sleep(Duration::from_secs(7)).await;
 
         let current_value = JsonDataCache::handle_cache_option(&data_cache).await;
-        
+
         assert_eq!(current_value.is_none(), true);
     }
 
-    #[tokio::test(start_paused=true)]
+    #[tokio::test(start_paused = true)]
     async fn none_option_yields_none() {
         let current_value = JsonDataCache::handle_cache_option(&None).await;
-        
-        current_value.expect("Should be Some")
-            .as_null().expect("Should be null")
-    }
 
+        current_value
+            .expect("Should be Some")
+            .as_null()
+            .expect("Should be null")
+    }
 }

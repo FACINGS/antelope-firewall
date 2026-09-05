@@ -1,11 +1,14 @@
 use hyper::StatusCode;
-use prometheus_exporter::prometheus::{core::{GenericCounter, AtomicF64}, register_counter};
+use prometheus_exporter::prometheus::{
+    core::{AtomicF64, GenericCounter},
+    register_counter,
+};
 use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Debug,
     hash::Hash,
     sync::Arc,
-    fmt::Debug
 };
 use tokio::sync::Mutex;
 
@@ -17,7 +20,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use std::time::Duration;
 
-use crate::{json_data_cache::JsonDataCache, FilterFn, MapFn, PostMapFn, RequestInfo, RatelimiterMapFn};
+use crate::{
+    json_data_cache::JsonDataCache, FilterFn, MapFn, PostMapFn, RatelimiterMapFn, RequestInfo,
+};
 
 pub enum IncrementMode {
     Before(Box<MapFn<u64>>),
@@ -51,7 +56,7 @@ pub struct RateLimiter {
     current_window_state: Mutex<(u64, HashMap<String, u64>, HashMap<String, u64>)>,
     processed_counter: GenericCounter<AtomicF64>,
     denied_counter: GenericCounter<AtomicF64>,
-    accepted_counter: GenericCounter<AtomicF64>
+    accepted_counter: GenericCounter<AtomicF64>,
 }
 
 impl RateLimiter {
@@ -77,9 +82,21 @@ impl RateLimiter {
                 HashMap::new(),
                 HashMap::new(),
             )),
-            processed_counter: register_counter!(format!("ratelimiter_{}_processed", name), format!("Number of requests processed by {} ratelimiter", name)).unwrap(),
-            denied_counter: register_counter!(format!("ratelimiter_{}_denied", name), format!("Number of requests denied by {} ratelimiter", name)).unwrap(),
-            accepted_counter: register_counter!(format!("ratelimiter_{}_accepted", name), format!("Number of requests accepted by {} ratelimiter", name)).unwrap(),
+            processed_counter: register_counter!(
+                format!("ratelimiter_{}_processed", name),
+                format!("Number of requests processed by {} ratelimiter", name)
+            )
+            .unwrap(),
+            denied_counter: register_counter!(
+                format!("ratelimiter_{}_denied", name),
+                format!("Number of requests denied by {} ratelimiter", name)
+            )
+            .unwrap(),
+            accepted_counter: register_counter!(
+                format!("ratelimiter_{}_accepted", name),
+                format!("Number of requests accepted by {} ratelimiter", name)
+            )
+            .unwrap(),
         }
     }
 
@@ -191,7 +208,12 @@ impl RateLimiter {
                 Self::increment(
                     current_buckets,
                     bucket.clone(),
-                    get_rate_used((Arc::clone(&request_info), Arc::clone(&value), Arc::clone(&json))).await,
+                    get_rate_used((
+                        Arc::clone(&request_info),
+                        Arc::clone(&value),
+                        Arc::clone(&json),
+                    ))
+                    .await,
                 )
                 .await;
             };
@@ -215,7 +237,7 @@ impl RateLimiter {
     /// Run after the request has been sent to trigger an increment on the ratelimiter
     /// Takes the RequestInfo struct and JSON request body, along with response
     /// Useful so that increment logic can be made run based on logic of response
-    /// 
+    ///
     /// Does not take self as mut but can modify the ratelimiter in a thread-safe way
     pub async fn post_increment(
         &self,
@@ -232,11 +254,12 @@ impl RateLimiter {
         };
         if let IncrementMode::After(get_rate_used) = &self.increment_mode {
             let rate_used = get_rate_used((
-                Arc::clone(&request_info), 
+                Arc::clone(&request_info),
                 Arc::clone(&data),
                 Arc::clone(&response),
-                Arc::clone(&json)
-            )).await;
+                Arc::clone(&json),
+            ))
+            .await;
             for bucket in (self.get_buckets)((
                 Arc::new(self.name.clone()),
                 Arc::clone(&request_info),
@@ -245,12 +268,7 @@ impl RateLimiter {
             ))
             .await
             {
-                Self::increment(
-                    current_buckets,
-                    bucket,
-                    rate_used
-                )
-                .await;
+                Self::increment(current_buckets, bucket, rate_used).await;
             }
         }
     }
@@ -262,8 +280,8 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     use hyper::{HeaderMap, Uri};
-    use serde_json::Map;
     use mock_instant::MockClock;
+    use serde_json::Map;
 
     use super::*;
 
@@ -272,21 +290,26 @@ mod tests {
         let limiter = RateLimiter::new(
             "create".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
-            })),
+            Box::new(|_| {
+                Box::pin(async move {
+                    HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+                })
+            }),
             Box::new(move |_| Box::pin(async move { 3 })),
             IncrementMode::Before(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            10
+            10,
         );
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, true);
     }
 
@@ -296,33 +319,41 @@ mod tests {
         let limiter = RateLimiter::new(
             "overflow1".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
-            })),
+            Box::new(|_| {
+                Box::pin(async move {
+                    HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+                })
+            }),
             Box::new(move |_| Box::pin(async move { 100 })),
             IncrementMode::Before(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            10
+            10,
         );
 
         for _ in 0..200 {
-            let passed = limiter.should_request_pass(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new()))
-            ).await;
+            let passed = limiter
+                .should_request_pass(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                )
+                .await;
             assert_eq!(passed, true);
         }
 
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, false);
     }
 
@@ -332,44 +363,55 @@ mod tests {
         let limiter = RateLimiter::new(
             "overflow2".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
-            })),
+            Box::new(|_| {
+                Box::pin(async move {
+                    HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+                })
+            }),
             Box::new(move |_| Box::pin(async move { 100 })),
             IncrementMode::Before(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            10
+            10,
         );
 
         for _ in 0..200 {
-            let passed = limiter.should_request_pass(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new()))
-            ).await;
+            let passed = limiter
+                .should_request_pass(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                )
+                .await;
             assert_eq!(passed, true);
         }
 
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, false);
 
         MockClock::set_system_time(Duration::from_secs(15));
         println!("System time: 15s");
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, false);
     }
 
@@ -379,46 +421,57 @@ mod tests {
         let limiter = RateLimiter::new(
             "overflow3".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
-            })),
+            Box::new(|_| {
+                Box::pin(async move {
+                    HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+                })
+            }),
             Box::new(move |_| Box::pin(async move { 100 })),
             IncrementMode::Before(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            10
+            10,
         );
 
         for _ in 0..120 {
-            let passed = limiter.should_request_pass(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new()))
-            ).await;
+            let passed = limiter
+                .should_request_pass(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                )
+                .await;
             assert_eq!(passed, true);
         }
 
         MockClock::set_system_time(Duration::from_secs(12));
         for _ in 0..21 {
-            let passed = limiter.should_request_pass(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new()))
-            ).await;
+            let passed = limiter
+                .should_request_pass(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                )
+                .await;
             assert_eq!(passed, true);
         }
 
-        // 120 * 0.8 + 20 * 0.2 = 100 
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        // 120 * 0.8 + 20 * 0.2 = 100
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, false);
     }
 
@@ -428,54 +481,68 @@ mod tests {
         let limiter = RateLimiter::new(
             "sporadic".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
-            })),
+            Box::new(|_| {
+                Box::pin(async move {
+                    HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+                })
+            }),
             Box::new(move |_| Box::pin(async move { 100 })),
             IncrementMode::Before(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            10
+            10,
         );
 
         for _ in 0..200 {
-            let passed = limiter.should_request_pass(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new()))
-            ).await;
+            let passed = limiter
+                .should_request_pass(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                )
+                .await;
             assert_eq!(passed, true);
         }
 
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, false);
 
         MockClock::set_system_time(Duration::from_secs(100));
         for _ in 0..200 {
-            let passed = limiter.should_request_pass(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new()))
-            ).await;
+            let passed = limiter
+                .should_request_pass(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                )
+                .await;
             assert_eq!(passed, true);
         }
 
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, false);
     }
 
@@ -484,13 +551,15 @@ mod tests {
         let limiter = RateLimiter::new(
             "window_duration".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
-            })),
+            Box::new(|_| {
+                Box::pin(async move {
+                    HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+                })
+            }),
             Box::new(move |_| Box::pin(async move { 100 })),
             IncrementMode::Before(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            140
+            140,
         );
         assert_eq!(limiter.get_window_duration(), 140);
     }
@@ -501,41 +570,52 @@ mod tests {
         let limiter = RateLimiter::new(
             "post_increment".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
-            })),
+            Box::new(|_| {
+                Box::pin(async move {
+                    HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+                })
+            }),
             Box::new(move |_| Box::pin(async move { 100 })),
             IncrementMode::After(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            10
+            10,
         );
 
         for _ in 0..200 {
-            let passed = limiter.should_request_pass(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new()))
-            ).await;
+            let passed = limiter
+                .should_request_pass(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                )
+                .await;
             assert_eq!(passed, true);
-            limiter.post_increment(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new())),
-                Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED))
-            ).await;
+            limiter
+                .post_increment(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                    Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED)),
+                )
+                .await;
         }
 
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, false);
     }
 
@@ -545,59 +625,76 @@ mod tests {
         let limiter = RateLimiter::new(
             "before".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
-            })),
+            Box::new(|_| {
+                Box::pin(async move {
+                    HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+                })
+            }),
             Box::new(move |_| Box::pin(async move { 1 })),
             IncrementMode::Before(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            10
+            10,
         );
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, true);
 
-        limiter.post_increment(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new())),
-            Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED))
-        ).await;
+        limiter
+            .post_increment(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+                Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED)),
+            )
+            .await;
 
         // second call passes because overflow
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, true);
 
-        limiter.post_increment(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new())),
-            Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED))
-        ).await;
+        limiter
+            .post_increment(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+                Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED)),
+            )
+            .await;
 
         // third call should not pass
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, false);
     }
 
@@ -607,59 +704,76 @@ mod tests {
         let limiter = RateLimiter::new(
             "after".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
-            })),
+            Box::new(|_| {
+                Box::pin(async move {
+                    HashSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+                })
+            }),
             Box::new(move |_| Box::pin(async move { 1 })),
             IncrementMode::After(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            10
+            10,
         );
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, true);
 
-        limiter.post_increment(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new())),
-            Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED))
-        ).await;
+        limiter
+            .post_increment(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+                Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED)),
+            )
+            .await;
 
         // second call passes because overflow
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, true);
 
-        limiter.post_increment(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new())),
-            Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED))
-        ).await;
+        limiter
+            .post_increment(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+                Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED)),
+            )
+            .await;
 
         // third call should not pass
-        let passed = limiter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let passed = limiter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(passed, false);
     }
 
@@ -668,33 +782,37 @@ mod tests {
         let limiter = RateLimiter::new(
             "empty".into(),
             Box::new(|_| Box::pin(async { true })),
-            Box::new(|_| Box::pin(async move {
-                HashSet::from([])
-            })),
+            Box::new(|_| Box::pin(async move { HashSet::from([]) })),
             Box::new(move |_| Box::pin(async move { 10 })),
             IncrementMode::After(Box::new(|_| Box::pin(async { 1 }))),
             None,
-            10
+            10,
         );
-        
+
         for _ in 1..100 {
-            let passed = limiter.should_request_pass(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new()))
-            ).await;
+            let passed = limiter
+                .should_request_pass(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                )
+                .await;
             assert_eq!(passed, true);
 
-            limiter.post_increment(
-                Arc::new(RequestInfo::new(HeaderMap::new(),
-                    Uri::from_static("https://google.com/"),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-                )),
-                Arc::new(Value::Object(Map::new())),
-                Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED))
-            ).await;
+            limiter
+                .post_increment(
+                    Arc::new(RequestInfo::new(
+                        HeaderMap::new(),
+                        Uri::from_static("https://google.com/"),
+                        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                    )),
+                    Arc::new(Value::Object(Map::new())),
+                    Arc::new((Value::Object(Map::new()), StatusCode::ACCEPTED)),
+                )
+                .await;
         }
     }
 }

@@ -1,15 +1,15 @@
-use core::{num, fmt};
 use core::convert::TryInto;
+use core::{fmt, num};
 use std::ops::{AddAssign, MulAssign, Neg};
 
-use serde::{Deserialize, Serialize};
 use serde::de::{
-    self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess,
-    VariantAccess, Visitor,
+    self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
+    Visitor,
 };
+use serde::{Deserialize, Serialize};
 
 use std;
-use std::fmt::{Display};
+use std::fmt::Display;
 
 use serde::{de as ser_de, ser as ser_ser};
 
@@ -65,7 +65,7 @@ impl Display for Error {
         match self {
             Error::Message(msg) => formatter.write_str(msg),
             Error::Eof => formatter.write_str("unexpected end of input"),
-            _ => todo!()
+            _ => todo!(),
         }
     }
 }
@@ -122,8 +122,8 @@ impl<'de> Deserializer<'de> {
             Some((consumed, left)) => {
                 self.input = left;
                 Ok(*consumed)
-            },
-            None => Err(Error::Eof)
+            }
+            None => Err(Error::Eof),
         }
     }
 
@@ -139,77 +139,74 @@ impl<'de> Deserializer<'de> {
 
     // Parse 1 as true, 0 as false, else error
     fn parse_bool(&mut self) -> Result<bool> {
-        self.next_byte()
-            .and_then(|b| match b {
-                1 => Ok(true),
-                0 => Ok(false),
-                _ => Err(Error::ExpectedBoolean)
-            })
+        self.next_byte().and_then(|b| match b {
+            1 => Ok(true),
+            0 => Ok(false),
+            _ => Err(Error::ExpectedBoolean),
+        })
     }
 
     // TODO: Abstract to macro
     fn parse_u8(&mut self) -> Result<u8> {
-        self.next_byte()
-            .map(|u8| u8::from_le_bytes([u8]))
+        self.next_byte().map(|u8| u8::from_le_bytes([u8]))
     }
 
     fn parse_u16(&mut self) -> Result<u16> {
         let bytes = self.next_bytes(core::mem::size_of::<u16>())?;
-        let mut le_bytes = [0,0];
+        let mut le_bytes = [0, 0];
         le_bytes.copy_from_slice(bytes);
         Ok(u16::from_le_bytes(le_bytes))
     }
 
     fn parse_u32(&mut self) -> Result<u32> {
         let bytes = self.next_bytes(core::mem::size_of::<u32>())?;
-        let mut le_bytes = [0,0,0,0];
+        let mut le_bytes = [0, 0, 0, 0];
         le_bytes.copy_from_slice(bytes);
         Ok(u32::from_le_bytes(le_bytes))
     }
 
     fn parse_u64(&mut self) -> Result<u64> {
         let bytes = self.next_bytes(core::mem::size_of::<u64>())?;
-        let mut le_bytes = [0,0,0,0,0,0,0,0];
+        let mut le_bytes = [0, 0, 0, 0, 0, 0, 0, 0];
         le_bytes.copy_from_slice(bytes);
         Ok(u64::from_le_bytes(le_bytes))
     }
 
     fn parse_u128(&mut self) -> Result<u128> {
         let bytes = self.next_bytes(core::mem::size_of::<u128>())?;
-        let mut le_bytes = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+        let mut le_bytes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         le_bytes.copy_from_slice(bytes);
         Ok(u128::from_le_bytes(le_bytes))
     }
 
     fn parse_i8(&mut self) -> Result<i8> {
-        self.next_byte()
-            .map(|u8| i8::from_le_bytes([u8]))
+        self.next_byte().map(|u8| i8::from_le_bytes([u8]))
     }
 
     fn parse_i16(&mut self) -> Result<i16> {
         let bytes = self.next_bytes(core::mem::size_of::<i16>())?;
-        let mut le_bytes = [0,0];
+        let mut le_bytes = [0, 0];
         le_bytes.copy_from_slice(bytes);
         Ok(i16::from_le_bytes(le_bytes))
     }
 
     fn parse_i32(&mut self) -> Result<i32> {
         let bytes = self.next_bytes(core::mem::size_of::<i32>())?;
-        let mut le_bytes = [0,0,0,0];
+        let mut le_bytes = [0, 0, 0, 0];
         le_bytes.copy_from_slice(bytes);
         Ok(i32::from_le_bytes(le_bytes))
     }
 
     fn parse_i64(&mut self) -> Result<i64> {
         let bytes = self.next_bytes(core::mem::size_of::<i32>())?;
-        let mut le_bytes = [0,0,0,0,0,0,0,0];
+        let mut le_bytes = [0, 0, 0, 0, 0, 0, 0, 0];
         le_bytes.copy_from_slice(bytes);
         Ok(i64::from_le_bytes(le_bytes))
     }
 
     fn parse_i128(&mut self) -> Result<i128> {
         let bytes = self.next_bytes(core::mem::size_of::<i32>())?;
-        let mut le_bytes = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+        let mut le_bytes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         le_bytes.copy_from_slice(bytes);
         Ok(i128::from_le_bytes(le_bytes))
     }
@@ -455,11 +452,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 
     // Unit struct means a named value containing no data.
-    fn deserialize_unit_struct<V>(
-        self,
-        _name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value>
+    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -469,11 +462,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     // As is done here, serializers are encouraged to treat newtype structs as
     // insignificant wrappers around the data they contain. That means not
     // parsing anything other than the contained value.
-    fn deserialize_newtype_struct<V>(
-        self,
-        _name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -622,15 +611,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 // element.
 struct CommaSeparated<'a, 'de: 'a> {
     de: &'a mut Deserializer<'de>,
-    len: u32
+    len: u32,
 }
 
 impl<'a, 'de> CommaSeparated<'a, 'de> {
     fn new(de: &'a mut Deserializer<'de>, len: u32) -> Self {
-        CommaSeparated {
-            de,
-            len
-        }
+        CommaSeparated { de, len }
     }
 }
 
@@ -760,18 +746,13 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
 
     // Struct variants are represented in JSON as `{ NAME: { K: V, ... } }` so
     // deserialize the inner map here.
-    fn struct_variant<V>(
-        self,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value>
+    fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         de::Deserializer::deserialize_map(self.de, visitor)
     }
 }
-
 
 struct VaruintVisitor;
 
@@ -792,7 +773,7 @@ impl<'de> Visitor<'de> for VaruintVisitor {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Varuint {
-    value: u32
+    value: u32,
 }
 
 impl Varuint {
@@ -825,14 +806,15 @@ impl<'de> Deserialize<'de> for Varuint {
 impl Serialize for Varuint {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
+        S: serde::Serializer,
+    {
         serializer.serialize_u32(self.value)
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Name {
-    value: String
+    value: String,
 }
 
 impl Name {
@@ -843,14 +825,17 @@ impl Name {
 
 impl From<&str> for Name {
     fn from(value: &str) -> Self {
-        Name { value: value.into() }
+        Name {
+            value: value.into(),
+        }
     }
 }
 
 impl Serialize for Name {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         serializer.serialize_str(&self.value)
     }
 }
@@ -877,7 +862,6 @@ pub fn name_to_string(n: u64) -> String {
     }
     result.trim_end_matches(".").to_string()
 }
-
 
 impl<'de> Deserialize<'de> for Name {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Name, D::Error>
@@ -921,13 +905,13 @@ pub struct Action {
     pub account: Name,
     pub name: Name,
     pub authorization: Vec<Authorization>,
-    pub data: Vec<u8>
+    pub data: Vec<u8>,
 }
 
 #[derive(Deserialize, Serialize, Debug, PartialEq, Eq)]
 pub struct Authorization {
     pub actor: Name,
-    pub permission: Name
+    pub permission: Name,
 }
 
 #[cfg(test)]
@@ -943,27 +927,27 @@ mod tests {
         let hex = hex::decode(bytes).unwrap();
         let parsed = crate::de::from_bytes::<Transaction>(&hex[..]).expect("invalid packed_trx");
         let expected = Transaction {
-            actions: Vec::from([
-                Action {
-                    account: "atomicassets".into(),
-                    name: "burnasset".into(),
-                    authorization: Vec::from([Authorization {
-                        actor: "dyjsc.wam".into(),
-                        permission: "active".into()
-                    }]),
-                    data: hex::decode("0000908603849f4fdf80911800010000").expect("invalid data")
-                }
-            ]),
+            actions: Vec::from([Action {
+                account: "atomicassets".into(),
+                name: "burnasset".into(),
+                authorization: Vec::from([Authorization {
+                    actor: "dyjsc.wam".into(),
+                    permission: "active".into(),
+                }]),
+                data: hex::decode("0000908603849f4fdf80911800010000").expect("invalid data"),
+            }]),
             ctx_free_actions: vec![],
             delay_sec: 0.into(),
             max_net_usage_words: 0.into(),
-            expiration: u32::try_from(NaiveDateTime::parse_from_str(
-                "2024-02-05T01:30:47",
-                "%Y-%m-%dT%H:%M:%S"
-            ).expect("invalid date").timestamp()).expect("invalid date"),
+            expiration: u32::try_from(
+                NaiveDateTime::parse_from_str("2024-02-05T01:30:47", "%Y-%m-%dT%H:%M:%S")
+                    .expect("invalid date")
+                    .timestamp(),
+            )
+            .expect("invalid date"),
             ref_block_num: 5867,
             ref_block_prefix: 3682600128,
-            max_cpu_usage_ms: 0.into()
+            max_cpu_usage_ms: 0.into(),
         };
         assert_eq!(parsed, expected);
     }
@@ -1039,27 +1023,30 @@ mod tests {
         let hex = hex::decode(bytes).unwrap();
         let parsed = crate::de::from_bytes::<Transaction>(&hex[..]).expect("invalid packed_trx");
         let expected = Transaction {
-            actions: Vec::from([
-                Action {
-                    account: "eosio".into(),
-                    name: "awardgenesis".into(),
-                    authorization: Vec::from([Authorization {
-                        actor: "genesis.wax".into(),
-                        permission: "awardgenesis".into()
-                    }]),
-                    data: hex::decode("00003086035f065e00e9a435000000000857415800000000304737afde7871e2").expect("invalid data")
-                }
-            ]),
+            actions: Vec::from([Action {
+                account: "eosio".into(),
+                name: "awardgenesis".into(),
+                authorization: Vec::from([Authorization {
+                    actor: "genesis.wax".into(),
+                    permission: "awardgenesis".into(),
+                }]),
+                data: hex::decode(
+                    "00003086035f065e00e9a435000000000857415800000000304737afde7871e2",
+                )
+                .expect("invalid data"),
+            }]),
             ctx_free_actions: vec![],
             delay_sec: 0.into(),
             max_net_usage_words: 0.into(),
-            expiration: u32::try_from(NaiveDateTime::parse_from_str(
-                "2019-07-02T03:26:45",
-                "%Y-%m-%dT%H:%M:%S"
-            ).expect("invalid date").timestamp()).expect("invalid date"),
+            expiration: u32::try_from(
+                NaiveDateTime::parse_from_str("2019-07-02T03:26:45", "%Y-%m-%dT%H:%M:%S")
+                    .expect("invalid date")
+                    .timestamp(),
+            )
+            .expect("invalid date"),
             ref_block_num: 26614,
             ref_block_prefix: 2462390415,
-            max_cpu_usage_ms: 0.into()
+            max_cpu_usage_ms: 0.into(),
         };
         assert_eq!(parsed, expected);
     }
@@ -1109,30 +1096,33 @@ mod tests {
                     name: "noop".into(),
                     authorization: Vec::from([Authorization {
                         actor: "greymassfuel".into(),
-                        permission: "cosign".into()
+                        permission: "cosign".into(),
                     }]),
-                    data: hex::decode("").expect("invalid data")
+                    data: hex::decode("").expect("invalid data"),
                 },
                 Action {
                     account: "eosio.msig".into(),
                     name: "exec".into(),
                     authorization: Vec::from([Authorization {
                         actor: "animus.link".into(),
-                        permission: "active".into()
+                        permission: "active".into(),
                     }]),
-                    data: hex::decode("901c3dd9cc469f74000010556785d17100e07411602ddd34").expect("invalid data")
-                }
+                    data: hex::decode("901c3dd9cc469f74000010556785d17100e07411602ddd34")
+                        .expect("invalid data"),
+                },
             ]),
             ctx_free_actions: vec![],
             delay_sec: 0.into(),
             max_net_usage_words: 0.into(),
-            expiration: u32::try_from(NaiveDateTime::parse_from_str(
-                "2023-08-01T16:06:34",
-                "%Y-%m-%dT%H:%M:%S"
-            ).expect("invalid date").timestamp()).expect("invalid date"),
+            expiration: u32::try_from(
+                NaiveDateTime::parse_from_str("2023-08-01T16:06:34", "%Y-%m-%dT%H:%M:%S")
+                    .expect("invalid date")
+                    .timestamp(),
+            )
+            .expect("invalid date"),
             ref_block_num: 18266,
             ref_block_prefix: 2228585714,
-            max_cpu_usage_ms: 20.into()
+            max_cpu_usage_ms: 20.into(),
         };
         assert_eq!(parsed, expected);
     }
@@ -1150,30 +1140,33 @@ mod tests {
                     name: "noop".into(),
                     authorization: Vec::from([Authorization {
                         actor: "greymassfuel".into(),
-                        permission: "cosign".into()
+                        permission: "cosign".into(),
                     }]),
-                    data: hex::decode("").expect("invalid data")
+                    data: hex::decode("").expect("invalid data"),
                 },
                 Action {
                     account: "eosio.msig".into(),
                     name: "exec".into(),
                     authorization: Vec::from([Authorization {
                         actor: "imjohnatboid".into(),
-                        permission: "active".into()
+                        permission: "active".into(),
                     }]),
-                    data: hex::decode("80b574d3881cb5d900000000747a625c901c3dd9cc469f74").expect("invalid data")
-                }
+                    data: hex::decode("80b574d3881cb5d900000000747a625c901c3dd9cc469f74")
+                        .expect("invalid data"),
+                },
             ]),
             ctx_free_actions: vec![],
             delay_sec: 0.into(),
             max_net_usage_words: 0.into(),
-            expiration: u32::try_from(NaiveDateTime::parse_from_str(
-                "2023-04-01T15:27:46",
-                "%Y-%m-%dT%H:%M:%S"
-            ).expect("invalid date").timestamp()).expect("invalid date"),
+            expiration: u32::try_from(
+                NaiveDateTime::parse_from_str("2023-04-01T15:27:46", "%Y-%m-%dT%H:%M:%S")
+                    .expect("invalid date")
+                    .timestamp(),
+            )
+            .expect("invalid date"),
             ref_block_num: 39458,
             ref_block_prefix: 2729206172,
-            max_cpu_usage_ms: 20.into()
+            max_cpu_usage_ms: 20.into(),
         };
         assert_eq!(parsed, expected);
     }
@@ -1257,29 +1250,27 @@ mod tests {
         let hex = hex::decode(bytes).unwrap();
         let parsed = crate::de::from_bytes::<Transaction>(&hex[..]).expect("invalid packed_trx");
         let expected = Transaction {
-            actions: Vec::from([
-                Action {
-                    account: "eosio".into(),
-                    name: "claimrewards".into(),
-                    authorization: Vec::from([
-                        Authorization {
-                            actor: "aus1genereos".into(),
-                            permission: "claimer".into()
-                        },
-                    ]),
-                    data: hex::decode("80a9ba6a2a16b036").expect("invalid data")
-                },
-            ]),
+            actions: Vec::from([Action {
+                account: "eosio".into(),
+                name: "claimrewards".into(),
+                authorization: Vec::from([Authorization {
+                    actor: "aus1genereos".into(),
+                    permission: "claimer".into(),
+                }]),
+                data: hex::decode("80a9ba6a2a16b036").expect("invalid data"),
+            }]),
             ctx_free_actions: vec![],
             delay_sec: 0.into(),
             max_net_usage_words: 0.into(),
-            expiration: u32::try_from(NaiveDateTime::parse_from_str(
-                "2024-02-03T01:08:58",
-                "%Y-%m-%dT%H:%M:%S"
-            ).expect("invalid date").timestamp()).expect("invalid date"),
+            expiration: u32::try_from(
+                NaiveDateTime::parse_from_str("2024-02-03T01:08:58", "%Y-%m-%dT%H:%M:%S")
+                    .expect("invalid date")
+                    .timestamp(),
+            )
+            .expect("invalid date"),
             ref_block_num: 53164,
             ref_block_prefix: 2594849745,
-            max_cpu_usage_ms: 0.into()
+            max_cpu_usage_ms: 0.into(),
         };
         assert_eq!(parsed, expected);
     }

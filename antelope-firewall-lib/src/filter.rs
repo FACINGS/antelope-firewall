@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use prometheus_exporter::prometheus::{core::{AtomicF64, GenericCounter}, register_counter};
+use prometheus_exporter::prometheus::{
+    core::{AtomicF64, GenericCounter},
+    register_counter,
+};
 use serde_json::Value;
 
 use crate::{
@@ -16,7 +19,7 @@ pub struct Filter {
     cache: Option<Arc<JsonDataCache>>,
     processed_counter: GenericCounter<AtomicF64>,
     denied_counter: GenericCounter<AtomicF64>,
-    accepted_counter: GenericCounter<AtomicF64>
+    accepted_counter: GenericCounter<AtomicF64>,
 }
 
 impl Filter {
@@ -32,15 +35,18 @@ impl Filter {
             processed_counter: register_counter!(
                 format!("filter_{}_processed", name),
                 format!("Number of requests processed by {} filter", name),
-            ).unwrap(),
+            )
+            .unwrap(),
             denied_counter: register_counter!(
                 format!("filter_{}_denied", name),
                 format!("Number of requests denied by {} filter", name),
-            ).unwrap(),
+            )
+            .unwrap(),
             accepted_counter: register_counter!(
                 format!("filter_{}_accepted", name),
                 format!("Number of requests accepted by {} filter", name),
-            ).unwrap(),
+            )
+            .unwrap(),
         }
     }
 
@@ -79,103 +85,117 @@ mod tests {
     #[tokio::test]
     async fn allows_requests_through() {
         let filter = Filter::new(
-            "passes_all".into(), 
+            "passes_all".into(),
             Box::new(|_| Box::pin(async { true })),
-            None
+            None,
         );
-        let should_pass = filter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let should_pass = filter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(should_pass, true);
     }
 
     #[tokio::test]
     async fn denies_requests() {
         let filter = Filter::new(
-            "denies_all".into(), 
+            "denies_all".into(),
             Box::new(|_| Box::pin(async { false })),
-            None
+            None,
         );
-        let should_pass = filter.should_request_pass(
-            Arc::new(RequestInfo::new(HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let should_pass = filter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(should_pass, false);
     }
 
     #[tokio::test]
     async fn passes_requestinfo_to_function() {
         let filter = Filter::new(
-            "passes_requestinfo".into(), 
-            Box::new(|(a, _, _)| Box::pin(async move {
-                a.headers
-                    .get("accept")
-                    .and_then(|r| r.to_str().ok().map(|s| s == "application/json"))
-                    .unwrap_or(false)
-            })),
-            None
+            "passes_requestinfo".into(),
+            Box::new(|(a, _, _)| {
+                Box::pin(async move {
+                    a.headers
+                        .get("accept")
+                        .and_then(|r| r.to_str().ok().map(|s| s == "application/json"))
+                        .unwrap_or(false)
+                })
+            }),
+            None,
         );
 
         let mut headers = HeaderMap::new();
         headers.insert("accept", "application/json".parse().unwrap());
-        let should_pass = filter.should_request_pass(
-            Arc::new(RequestInfo::new(
-                headers,
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let should_pass = filter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    headers,
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(should_pass, true);
 
         let mut headers_two = HeaderMap::new();
         headers_two.insert("accept", "text".parse().unwrap());
-        let should_pass = filter.should_request_pass(
-            Arc::new(RequestInfo::new(
-                headers_two,
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let should_pass = filter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    headers_two,
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(should_pass, false);
     }
 
     #[tokio::test]
     async fn passes_value_to_function() {
         let filter = Filter::new(
-            "passes_value".into(), 
-            Box::new(|(_, a, _)| Box::pin(async move {
-                a.is_null()
-            })),
-            None
+            "passes_value".into(),
+            Box::new(|(_, a, _)| Box::pin(async move { a.is_null() })),
+            None,
         );
 
-        let should_pass = filter.should_request_pass(
-            Arc::new(RequestInfo::new(
-                HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Null)
-        ).await;
+        let should_pass = filter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Null),
+            )
+            .await;
         assert_eq!(should_pass, true);
 
-        let should_pass = filter.should_request_pass(
-            Arc::new(RequestInfo::new(
-                HeaderMap::new(),
-                Uri::from_static("https://google.com/"),
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))
-            )),
-            Arc::new(Value::Object(Map::new()))
-        ).await;
+        let should_pass = filter
+            .should_request_pass(
+                Arc::new(RequestInfo::new(
+                    HeaderMap::new(),
+                    Uri::from_static("https://google.com/"),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Arc::new(Value::Object(Map::new())),
+            )
+            .await;
         assert_eq!(should_pass, false);
     }
 }

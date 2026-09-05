@@ -81,7 +81,31 @@ url = "http://127.0.0.1:5003"
 weight = 1
 ```
 
-This will result in having the firewall proxy "read" requests to three urls, and "write" requests to one url. A full list of which requests are "read" or "write" is included in the comments of `default_config.toml`. You will very likely need to edit this based on your setup. For example, if you wanted to add another url that can be used as a proxy, simply duplicate the first `[[push_nodes]]` section and edit the respective entries. Note that name must be unique, and weight corresponds to how much a node will be favored when it comes to selecting a destination for a request.
+This will result in having the firewall proxy "read" requests to three urls, and "write" requests to one url. A full list of which requests are "read" or "write" is included in the comments of `default_config.toml`. You will very likely need to edit this based on your setup. For example, if you wanted to add another url that can be used as a proxy, simply duplicate the first `[[push_nodes]]` section and edit the respective entries. Weight corresponds to how much a node will be favored when it comes to selecting a destination for a request. Two pinnable entries of the same list cannot share a name, and no url can appear twice in one list; a name may appear in both lists, which is how one node serves reads and writes.
+
+### Upstream affinity
+
+Every response to a read endpoint from a pinnable node carries the header `X-Antelope-Upstream: <name>`, where the name is the node's `name` from `get_nodes`. The response also lists that header in `Access-Control-Expose-Headers`, so a browser can read it cross-origin. A client that wants the same node again sends `?upstream=<name>` on its next read request, and the firewall routes to that node when the name matches a node that accepts the path, is pinnable, and the health checker currently marks healthy. A name that matches nothing eligible is not an error: the request takes the routing mode and the response names the node that answered it.
+
+Affinity applies to read endpoints only. A push response carries neither header, and the parameter is ignored there.
+
+```toml
+[[get_nodes]]
+name = "greymass"
+url = "https://eos.greymass.com"
+# An entry that is itself a load balancer sets pinnable = false, because the
+# name identifies no single node. The default is true.
+pinnable = false
+```
+
+A pinnable name can carry letters, digits, and the characters `.`, `_` and `-`, so that it travels unchanged as a header value and as a query value.
+
+One client cannot hold a node by name for an unbounded share of the traffic. The firewall counts pinned requests per client IP and node name in a fixed window, and over the ceiling it drops the pin rather than the request: the routing mode picks, and the response names the node that answered. The count is exact, so the ceiling is the number of pinned requests one client can send for one name inside a window. Both keys are optional and default to 30 requests per 60 seconds. The name `pinned` is reserved for this counter and cannot name a `[[ratelimit]]` entry.
+
+```toml
+pinned_requests_per_window = 30
+pinned_window_seconds = 60
+```
 
 # Testing
 All tests can be run with `cargo test` in the root of the repository

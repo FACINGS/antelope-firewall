@@ -53,6 +53,17 @@ address = "0.0.0.0:3000"
 # Omit to not launch a prometheus process
 prometheus_address = "0.0.0.0:3001"
 
+# pinned_requests_per_window: Integer
+# pinned_window_seconds: non-zero Integer
+# Ceiling on the requests one client IP can pin to one node name inside a fixed
+# window, and the length of that window in seconds. The count is exact. Over the
+# ceiling the pin is dropped and the routing mode picks the node, so the request
+# is still answered and the response names the node that answered it.
+# Both can be left out, and default to 30 requests per 60 seconds.
+# The name "pinned" is reserved for this counter and cannot name a ratelimiter.
+pinned_requests_per_window = 30
+pinned_window_seconds = 60
+
 # Healthcheck will run a get_info request every `interval` seconds on all nodes to determine
 # which nodes are in sync. If a node has a head_block_time more than `grace_period` seconds
 # older than the current system time, that node will not be considered as a valid node
@@ -209,10 +220,24 @@ weight = 1
 # /v1/chain/get_producer_schedule
 #
 
+# pinnable: Boolean
+# Can be left out, defaults to true.
+# A pinnable node names itself on every read response through the
+# X-Antelope-Upstream header, and a client can ask for that node again by
+# sending ?upstream=<name> on its next read request. A name that matches no
+# eligible node is not an error: the request takes the routing mode.
+# Set pinnable to false for an entry that is itself a load balancer, where the
+# name identifies no single node.
+# A pinnable name can carry letters, digits, and the characters . _ -
+# Two pinnable entries of one list cannot share a name, and no url can appear
+# twice in one list. A name can appear in both lists.
+# Affinity applies to the read endpoints listed above. A push response carries
+# no header, and the parameter is ignored there.
 [[get_nodes]]
 name = "get_one"
 url = "http://127.0.0.1:5001"
 weight = 1
+pinnable = true
 
 [[get_nodes]]
 name = "get_two"
